@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Learning Hub · Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── Login screen ────────────────────────────────────────────── -->
+<div id="loginScreen" class="login-screen">
+  <form id="loginForm" class="login-card">
+    <div class="login-logo">⬡</div>
+    <h1>Learning Hub</h1>
+    <p class="muted">Admin Panel</p>
+    <label>Username
+      <input type="text" id="loginUsername" autocomplete="username" required>
+    </label>
+    <label>Password
+      <input type="password" id="loginPassword" autocomplete="current-password" required>
+    </label>
+    <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+    <p id="loginError" class="error-text"></p>
+  </form>
+</div>
+
+<!-- ── App shell ────────────────────────────────────────────────── -->
+<div id="app" class="app-shell hidden">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="logo-glyph">⬡</span>
+      <div>
+        <div class="brand-title">Learning Hub</div>
+        <div class="brand-sub">Admin Panel</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" data-view="dashboard">📊 Dashboard</button>
+      <button class="nav-item" data-view="courses">📚 Courses</button>
+      <button class="nav-item" data-view="users">👥 Users</button>
+      <button class="nav-item" data-view="premium">👑 Premium</button>
+      <button class="nav-item" data-view="notices">📢 Notices</button>
+      <button class="nav-item" data-view="appcontrol">🛠 App Control</button>
+      <button class="nav-item" data-view="settings">⚙️ Settings</button>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="logoutBtn" class="btn btn-ghost btn-block">🚪 Logout</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <h2 id="viewTitle">Dashboard</h2>
+      <div class="topbar-right">
+        <span id="appStatusBadge" class="badge badge-ok">ALIVE</span>
+      </div>
+    </header>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <section id="view-dashboard" class="view">
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-value" id="statTotalUsers">–</div><div class="stat-label">Total Users</div></div>
+        <div class="stat-card"><div class="stat-icon">🟢</div><div class="stat-value" id="statActiveToday">–</div><div class="stat-label">Active Today</div></div>
+        <div class="stat-card"><div class="stat-icon">📚</div><div class="stat-value" id="statTotalCourses">–</div><div class="stat-label">Total Courses</div></div>
+        <div class="stat-card"><div class="stat-icon">👑</div><div class="stat-value" id="statPremiumUsers">–</div><div class="stat-label">Premium Users</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>User Growth (30 days)</h3>
+          <canvas id="growthChart" height="180"></canvas>
+        </div>
+        <div class="card">
+          <h3>Recent Activity</h3>
+          <ul id="activityFeed" class="activity-feed"><li class="muted">Loading…</li></ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-courses" class="view hidden">
+      <div class="toolbar">
+        <input type="search" id="courseSearch" placeholder="🔍 Search courses…">
+        <button class="btn btn-primary" id="newCourseBtn">➕ Add Course</button>
+      </div>
+      <div id="courseList" class="card-list"></div>
+    </section>
+
+    <section id="view-users" class="view hidden">
+      <div class="toolbar">
+        <input type="search" id="userSearch" placeholder="🔍 Search by device…">
+        <select id="userStatusFilter">
+          <option value="">All</option>
+          <option value="premium">Premium</option>
+          <option value="free">Free</option>
+          <option value="blocked">Blocked</option>
+          <option value="active">Active (7d)</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <a class="btn btn-ghost" href="#" id="exportUsersBtn">⬇ Export CSV</a>
+      </div>
+      <table class="data-table" id="usersTable">
+        <thead><tr><th>Device</th><th>Android</th><th>Registered</th><th>Last Active</th><th>Status</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="usersPagination" class="pagination"></div>
+    </section>
+
+    <section id="view-premium" class="view hidden">
+      <div class="stat-grid stat-grid-4">
+        <div class="stat-card"><div class="stat-value" id="premTotal">–</div><div class="stat-label">Total Grants</div></div>
+        <div class="stat-card"><div class="stat-value" id="premActive">–</div><div class="stat-label">Active</div></div>
+        <div class="stat-card"><div class="stat-value" id="premExpired">–</div><div class="stat-label">Expired</div></div>
+        <div class="stat-card"><div class="stat-value" id="premSoon">–</div><div class="stat-label">Expiring ≤7d</div></div>
+      </div>
+      <div class="toolbar">
+        <input type="search" id="premiumSearch" placeholder="🔍 Search device ID…">
+        <button class="btn btn-primary" id="grantPremiumBtn">👑 Grant Premium</button>
+        <a class="btn btn-ghost" href="#" id="exportPremiumBtn">⬇ Export CSV</a>
+      </div>
+      <table class="data-table">
+        <thead><tr><th>Device ID</th><th>Expiry</th><th>Granted By</th><th>Notes</th><th></th></tr></thead>
+        <tbody id="premiumTableBody"></tbody>
+      </table>
+    </section>
+
+    <section id="view-notices" class="view hidden">
+      <div class="toolbar">
+        <button class="btn btn-primary" id="newNoticeBtn">➕ New Notice</button>
+      </div>
+      <div id="noticeList" class="card-list"></div>
+    </section>
+
+    <section id="view-appcontrol" class="view hidden">
+      <div class="grid-2">
+        <div class="card">
+          <h3>App Status</h3>
+          <p class="muted">Current status: <strong id="appStatusText">–</strong></p>
+          <div class="btn-row">
+            <button class="btn btn-danger" id="killBtn">🛑 Kill Switch</button>
+            <button class="btn btn-warn" id="maintenanceBtn">🧰 Maintenance Mode</button>
+            <button class="btn btn-success" id="aliveBtn">✅ Go Live</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Version Control</h3>
+          <label>Current Version
+            <input type="text" id="cfgVersion" placeholder="1.0.0">
+          </label>
+          <label class="checkbox-row"><input type="checkbox" id="cfgForceUpdate"> Force update</label>
+          <button class="btn btn-primary" id="saveVersionBtn">Save</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-settings" class="view hidden">
+      <div class="card">
+        <h3>Change Admin Password</h3>
+        <label>Current Password<input type="password" id="curPass"></label>
+        <label>New Password (min 10 chars)<input type="password" id="newPass"></label>
+        <button class="btn btn-primary" id="changePassBtn">Update Password</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ── Generic modal ────────────────────────────────────────────── -->
+<div id="modalOverlay" class="modal-overlay hidden">
+  <div id="modalBox" class="modal-box"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
