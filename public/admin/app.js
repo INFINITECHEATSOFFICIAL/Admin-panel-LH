@@ -91,6 +91,34 @@ function openModal(html) {
 function closeModal() {
   document.getElementById('modalOverlay').classList.add('hidden');
 }
+
+// Centralized event delegation for all dynamic list and modal actions.
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-action]');
+  if (!button) return;
+  event.preventDefault();
+  const action = button.dataset.action;
+  const id = button.dataset.id ? Number(button.dataset.id) : null;
+  const courseId = button.dataset.courseId ? Number(button.dataset.courseId) : null;
+  switch (action) {
+    case 'close-modal': closeModal(); break;
+    case 'save-course': saveCourse(id, button.dataset.firstLessonId ? Number(button.dataset.firstLessonId) : null); break;
+    case 'edit-course': editCourse(id); break;
+    case 'delete-course': deleteCourse(id); break;
+    case 'manage-lessons': manageLessons(courseId, button.dataset.courseTitle || ''); break;
+    case 'lesson-modal': lessonModal(courseId); break;
+    case 'save-lesson': saveLesson(courseId); break;
+    case 'delete-lesson': deleteLesson(id, courseId); break;
+    case 'block-user': blockUser(id); break;
+    case 'unblock-user': unblockUser(id); break;
+    case 'load-users-page': loadUsers(Number(button.dataset.page)); break;
+    case 'revoke-premium': revokePremium(id); break;
+    case 'grant-premium': grantPremium(); break;
+    case 'toggle-notice': toggleNotice(id, button.dataset.active === 'true'); break;
+    case 'delete-notice': deleteNotice(id); break;
+    case 'save-notice': saveNotice(); break;
+  }
+});
 document.getElementById('modalOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'modalOverlay') closeModal();
 });
@@ -163,9 +191,9 @@ function courseRow(c) {
       <div class="list-item-sub">${esc(c.level)} · ${esc(c.description || '').slice(0, 80)}</div>
     </div>
     <div class="list-item-actions">
-      <button class="btn btn-ghost btn-sm" onclick="manageLessons(${c.id}, '${esc(c.title).replace(/'/g, "\\'")}')">📹 Lessons</button>
-      <button class="btn btn-ghost btn-sm" onclick="editCourse(${c.id})">✏️ Edit</button>
-      <button class="btn btn-danger btn-sm" onclick="deleteCourse(${c.id})">🗑</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-action="manage-lessons" data-course-id="${c.id}" data-course-title="${esc(c.title)}">📹 Lessons</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-action="edit-course" data-id="${c.id}">✏️ Edit</button>
+      <button type="button" class="btn btn-danger btn-sm" data-action="delete-course" data-id="${c.id}">🗑</button>
     </div>
   </div>`;
 }
@@ -175,6 +203,7 @@ document.getElementById('newCourseBtn').addEventListener('click', () => courseMo
 
 function courseModal(course = null) {
   const isEdit = !!course;
+  const firstLesson = course?.lessons?.[0] || {};
   openModal(`
     <h3>${isEdit ? 'Edit' : 'Add'} Course</h3>
     <label>Title<input id="cf_title" value="${esc(course?.title || '')}"></label>
@@ -184,9 +213,17 @@ function courseModal(course = null) {
     <label>Description<textarea id="cf_desc" rows="3">${esc(course?.description || '')}</textarea></label>
     <label class="checkbox-row"><input type="checkbox" id="cf_premium" ${course?.premium ? 'checked' : ''}> Premium course</label>
     <label class="checkbox-row"><input type="checkbox" id="cf_active" ${course?.active !== false ? 'checked' : ''}> Active</label>
+    <div class="form-section">
+      <div class="form-section-title">First lesson (optional)</div>
+      <label>Lesson title<input id="cf_lesson_title" value="${esc(firstLesson.title || '')}" placeholder="Lesson 01"></label>
+      <label>Video URL<input id="cf_video_url" type="url" value="${esc(firstLesson.video_url || '')}" placeholder="https://…"></label>
+      <label>Thumbnail URL<input id="cf_thumb_url" type="url" value="${esc(firstLesson.thumb_url || '')}" placeholder="https://…"></label>
+      <label>Download file URL<input id="cf_file_url" type="url" value="${esc(firstLesson.file_url || '')}" placeholder="Optional"></label>
+      <label>Duration<input id="cf_duration" value="${esc(firstLesson.duration || '')}" placeholder="12:30"></label>
+    </div>
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveCourse(${course?.id || 'null'})">Save</button>
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Cancel</button>
+      <button type="button" class="btn btn-primary" data-action="save-course" data-id="${course?.id || ''}" data-first-lesson-id="${firstLesson.id || ''}">Save</button>
     </div>
   `);
 }
@@ -198,7 +235,7 @@ async function editCourse(id) {
   } catch (err) { toast(err.message, 'error'); }
 }
 
-async function saveCourse(id) {
+async function saveCourse(id, firstLessonId = null) {
   const payload = {
     title: document.getElementById('cf_title').value.trim(),
     icon: document.getElementById('cf_icon').value.trim() || '📘',
@@ -208,11 +245,26 @@ async function saveCourse(id) {
     premium: document.getElementById('cf_premium').checked,
     active: document.getElementById('cf_active').checked,
   };
+  const lessonTitle = document.getElementById('cf_lesson_title').value.trim();
+  const lessonPayload = {
+    title: lessonTitle || 'Lesson 01',
+    video_url: document.getElementById('cf_video_url').value.trim(),
+    thumb_url: document.getElementById('cf_thumb_url').value.trim(),
+    file_url: document.getElementById('cf_file_url').value.trim(),
+    duration: document.getElementById('cf_duration').value.trim(),
+  };
+  const hasLesson = Boolean(lessonTitle || lessonPayload.video_url || lessonPayload.thumb_url || lessonPayload.file_url || lessonPayload.duration);
   try {
-    if (id) await api(`/courses/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-    else await api('/courses', { method: 'POST', body: JSON.stringify(payload) });
+    let savedCourse;
+    if (id) savedCourse = (await api(`/courses/${id}`, { method: 'PUT', body: JSON.stringify(payload) })).data;
+    else savedCourse = (await api('/courses', { method: 'POST', body: JSON.stringify(payload) })).data;
+    if (hasLesson) {
+      lessonPayload.course_id = savedCourse.id || id;
+      if (firstLessonId) await api(`/lessons/${firstLessonId}`, { method: 'PUT', body: JSON.stringify(lessonPayload) });
+      else await api('/lessons', { method: 'POST', body: JSON.stringify(lessonPayload) });
+    }
     closeModal();
-    toast('Course saved');
+    toast(hasLesson ? 'Course and first lesson saved' : 'Course saved');
     loadCourses();
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -233,8 +285,8 @@ async function manageLessons(courseId, courseTitle) {
     openModal(`
       <h3>Lessons · ${esc(courseTitle)}</h3>
       <div id="lessonListInner">${data.map((l) => lessonRow(l)).join('') || '<p class="muted">No lessons yet.</p>'}</div>
-      <button class="btn btn-primary btn-block" style="margin-top:14px" onclick="lessonModal(${courseId})">➕ Add Lesson</button>
-      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>
+      <button class="btn btn-primary btn-block" style="margin-top:14px" data-action="lesson-modal" data-course-id="${courseId}">➕ Add Lesson</button>
+      <div class="modal-actions"><button class="btn btn-ghost" data-action="close-modal">Close</button></div>
     `);
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -247,7 +299,7 @@ function lessonRow(l) {
         <div class="list-item-sub">${esc(l.duration || '')} · ${l.status}</div>
       </div>
       <div class="list-item-actions">
-        <button class="btn btn-danger btn-sm" onclick="deleteLesson(${l.id}, ${l.course_id})">🗑</button>
+        <button class="btn btn-danger btn-sm" data-action="delete-lesson" data-id="${l.id}" data-course-id="${l.course_id}">🗑</button>
       </div>
     </div>`;
 }
@@ -261,8 +313,8 @@ function lessonModal(courseId) {
     <label>File URL (optional download)<input id="lf_file"></label>
     <label>Duration (e.g. 12:30)<input id="lf_duration"></label>
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="manageLessons(${courseId}, '')">Back</button>
-      <button class="btn btn-primary" onclick="saveLesson(${courseId})">Save</button>
+      <button class="btn btn-ghost" data-action="manage-lessons" data-course-id="${courseId}">Back</button>
+      <button class="btn btn-primary" data-action="save-lesson" data-course-id="${courseId}">Save</button>
     </div>
   `);
 }
@@ -323,8 +375,8 @@ function userRow(u) {
       <td>${statusTags}</td>
       <td>
         ${u.is_blocked
-          ? `<button class="btn btn-success btn-sm" onclick="unblockUser(${u.id})">Unblock</button>`
-          : `<button class="btn btn-danger btn-sm" onclick="blockUser(${u.id})">Block</button>`}
+          ? `<button class="btn btn-success btn-sm" data-action="unblock-user" data-id="${u.id}">Unblock</button>`
+          : `<button class="btn btn-danger btn-sm" data-action="block-user" data-id="${u.id}">Block</button>`}
       </td>
     </tr>`;
 }
@@ -334,7 +386,7 @@ function renderPagination(elId, pagination, loader) {
   if (!pagination || pagination.totalPages <= 1) { el.innerHTML = ''; return; }
   let html = '';
   for (let p = 1; p <= pagination.totalPages; p++) {
-    html += `<button class="btn btn-sm ${p === pagination.page ? 'btn-primary' : 'btn-ghost'}" onclick="(${loader.name})(${p})">${p}</button>`;
+    html += `<button class="btn btn-sm ${p === pagination.page ? 'btn-primary' : 'btn-ghost'}" data-action="load-users-page" data-page="${p}">${p}</button>`;
   }
   el.innerHTML = html;
 }
@@ -386,7 +438,7 @@ function premiumRow(p) {
       <td>${expiry}</td>
       <td>${esc(p.granted_by || '–')}</td>
       <td>${esc(p.notes || '–')}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="revokePremium(${p.id})">Revoke</button></td>
+      <td><button class="btn btn-danger btn-sm" data-action="revoke-premium" data-id="${p.id}">Revoke</button></td>
     </tr>`;
 }
 
@@ -411,8 +463,8 @@ document.getElementById('grantPremiumBtn').addEventListener('click', () => {
     </label>
     <label>Notes<input id="pf_notes"></label>
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="grantPremium()">Grant</button>
+      <button class="btn btn-ghost" data-action="close-modal">Cancel</button>
+      <button class="btn btn-primary" data-action="grant-premium">Grant</button>
     </div>
   `);
 });
@@ -459,8 +511,8 @@ function noticeRow(n) {
         <div class="list-item-sub">${esc(n.message)} · target: ${esc(n.target)}</div>
       </div>
       <div class="list-item-actions">
-        <button class="btn btn-ghost btn-sm" onclick="toggleNotice(${n.id}, ${!n.is_active})">${n.is_active ? 'Disable' : 'Enable'}</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteNotice(${n.id})">🗑</button>
+        <button class="btn btn-ghost btn-sm" data-action="toggle-notice" data-id="${n.id}" data-active="${!n.is_active}">${n.is_active ? 'Disable' : 'Enable'}</button>
+        <button class="btn btn-danger btn-sm" data-action="delete-notice" data-id="${n.id}">🗑</button>
       </div>
     </div>`;
 }
@@ -478,8 +530,8 @@ document.getElementById('newNoticeBtn').addEventListener('click', () => {
       </select>
     </label>
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveNotice()">Publish</button>
+      <button class="btn btn-ghost" data-action="close-modal">Cancel</button>
+      <button class="btn btn-primary" data-action="save-notice">Publish</button>
     </div>
   `);
 });

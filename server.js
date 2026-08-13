@@ -5,7 +5,6 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const helmet = require('helmet');
-const cors = require('cors');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 
@@ -53,17 +52,56 @@ app.use(compression());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
-app.use(cors({
-  origin(origin, callback) {
-    // Same-origin panel requests and non-browser clients (no Origin header,
-    // e.g. the Android app) are always allowed; the API-key check on
-    // /api/public/* is the real gate for those.
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-}));
+// Normalizes "https://Example.com/" -> "https://example.com" so trailing
+// slashes / casing typos in an env var don't cause silent mismatches.
+function normalizeOrigin(o) {
+  try {
+    const u = new URL(o);
+    return `${u.protocol}//${u.host}`.toLowerCase();
+  } catch (_) {
+    return String(o).trim().replace(/\/+$/, '').toLowerCase();
+  }
+}
+
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map(normalizeOrigin);
+
+// Hand-rolled instead of relying solely on the `cors` package's origin
+// callback, because that callback only receives the Origin header — not
+// the request itself — so it has no way to know this server's own public
+// host. Here we DO have `req`, so same-origin panel traffic (the admin
+// panel is served BY this app, see the express.static mount below) is
+// always trusted automatically, with zero env var configuration required.
+// ALLOWED_ORIGINS is only consulted for a genuinely different frontend
+// domain calling this API.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  // No Origin header at all: non-browser client (Android app, curl,
+  // server-to-server). Not a CORS scenario — let it through; the API-key
+  // check on /api/public/* is the real gate for those.
+  if (!origin) return next();
+
+  const normalizedOrigin = normalizeOrigin(origin);
+  const requestSelfOrigin = normalizeOrigin(`${req.protocol}://${req.headers.host}`);
+
+  const isSameOrigin = normalizedOrigin === requestSelfOrigin;
+  const isExplicitlyAllowed = allowedOrigins.includes(normalizedOrigin);
+
+  if (!isSameOrigin && !isExplicitlyAllowed) {
+    return res.status(403).json({ error: 'Origin not allowed' });
+  }
+
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Key');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  return next();
+});
 
 // Global API rate limit — generous ceiling, tightened per-route where it matters
 // (see routes/auth.js login limiter and routes/public.js per-device limiter).
@@ -98,9 +136,6 @@ app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 // Centralized error handler — never leak stack traces to clients.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  if (err.message === 'Not allowed by CORS') {
-    return res.status(403).json({ error: 'Origin not allowed' });
-  }
   // eslint-disable-next-line no-console
   console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
