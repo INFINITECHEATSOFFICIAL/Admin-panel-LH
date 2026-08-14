@@ -38,11 +38,20 @@ router.get('/config', (req, res) => {
 router.get('/courses', (req, res) => {
   const courses = db.prepare('SELECT * FROM courses WHERE active = 1 ORDER BY order_index ASC').all();
   const lessonStmt = db.prepare(
-    `SELECT title, video_url AS video, thumb_url AS thumb, file_url AS file, duration
+    `SELECT title, video_url AS video, thumb_url AS thumb, file_url AS file, duration, folder_id,
+       (SELECT title FROM folders WHERE folders.id = lessons.folder_id) AS folder_title
      FROM lessons WHERE course_id = ? AND status = 'published' ORDER BY order_index ASC`
   );
+  const folderStmt = db.prepare(`
+    SELECT f.id, f.title, f.description, f.order_index,
+      (SELECT json_group_array(json_object('title', l.title, 'video', l.video_url, 'thumb', l.thumb_url, 'file', l.file_url, 'duration', l.duration))
+       FROM lessons l WHERE l.folder_id = f.id AND l.status = 'published' ORDER BY l.order_index ASC) AS lessons_json
+    FROM folders f WHERE f.course_id = ? AND f.active = 1 ORDER BY f.order_index ASC, f.id ASC
+  `);
 
-  const data = courses.map((c) => ({
+  const data = courses.map((c) => {
+    const folders = folderStmt.all(c.id).map((folder) => ({ ...folder, lessons: JSON.parse(folder.lessons_json || '[]') }));
+    return {
     title: c.title,
     icon: c.icon,
     level: c.level,
@@ -50,7 +59,8 @@ router.get('/courses', (req, res) => {
     desc: c.description,
     premium: !!c.premium,
     lessons: lessonStmt.all(c.id),
-  }));
+    folders,
+  }; });
 
   res.json({ courses: data });
 });

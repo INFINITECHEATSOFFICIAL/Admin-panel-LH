@@ -11,3 +11,9 @@ The Add/Edit Course modal now includes an optional first-lesson section with les
 The frontend, server, course route, and lesson route pass Node syntax checks. Static inspection confirms there are no remaining `onclick=` attributes in the frontend and that delegated `data-action` controls are present. In a local browser reproduction, the Add Course modal displayed the media fields, Cancel closed the modal, Save created the course and lesson, the Lessons view displayed the new lesson, and the Premium grant modal Cancel action also worked.
 
 The local test database and `.env` file are intentionally excluded from the delivery archive. Configure a production `.env` from `.env.example` and keep real secrets outside version control.
+
+## Device visibility and nested content
+
+The dashboard counts registered Android devices from the `users` table. A device appears only after the Android client successfully calls `POST /api/public/users/register` with the correct production API key. The updated client displays an explicit “Device synced to admin panel” or HTTP failure toast after registration; the user must accept the first-launch sync disclosure. Once registered, the Dashboard and Users page show the device automatically on their next load.
+
+Course content now supports `Course → Folder → Video`. Existing lessons remain valid as unsorted videos, while new folders group videos under a named module. The public API keeps the old flat lesson array for compatibility and adds a nested `folders` array for clients that want to render the hierarchy.

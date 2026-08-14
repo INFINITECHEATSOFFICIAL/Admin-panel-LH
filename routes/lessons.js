@@ -28,6 +28,16 @@ function validateLessonPayload(body, { partial = false } = {}) {
   if (body.thumb_url !== undefined) out.thumb_url = String(body.thumb_url).slice(0, 2000);
   if (body.file_url !== undefined) out.file_url = String(body.file_url).slice(0, 2000);
   if (body.duration !== undefined) out.duration = String(body.duration).slice(0, 20);
+  if (body.folder_id !== undefined) {
+    if (body.folder_id === null || body.folder_id === '') out.folder_id = null;
+    else {
+      const folderId = Number(body.folder_id);
+      const folder = db.prepare('SELECT id, course_id FROM folders WHERE id = ?').get(folderId);
+      if (!folder) errors.push('folder_id does not reference an existing folder');
+      else if (body.course_id !== undefined && Number(body.course_id) !== folder.course_id) errors.push('folder_id must belong to course_id');
+      else out.folder_id = folderId;
+    }
+  }
   if (body.status !== undefined) {
     if (!['published', 'draft'].includes(body.status)) errors.push('status must be "published" or "draft"');
     else out.status = body.status;
@@ -43,7 +53,9 @@ function validateLessonPayload(body, { partial = false } = {}) {
 
 router.get('/course/:courseId', (req, res) => {
   const lessons = db
-    .prepare('SELECT * FROM lessons WHERE course_id = ? ORDER BY order_index ASC, id ASC')
+    .prepare(`SELECT l.*, f.title AS folder_title
+      FROM lessons l LEFT JOIN folders f ON f.id = l.folder_id
+      WHERE l.course_id = ? ORDER BY COALESCE(f.order_index, -1) ASC, l.order_index ASC, l.id ASC`)
     .all(req.params.courseId);
   res.json({ data: lessons });
 });
@@ -57,11 +69,12 @@ router.post('/', (req, res) => {
     .get(data.course_id).m;
 
   const stmt = db.prepare(`
-    INSERT INTO lessons (course_id, title, video_url, thumb_url, file_url, duration, status, order_index)
-    VALUES (@course_id, @title, @video_url, @thumb_url, @file_url, @duration, @status, @order_index)
+    INSERT INTO lessons (course_id, folder_id, title, video_url, thumb_url, file_url, duration, status, order_index)
+    VALUES (@course_id, @folder_id, @title, @video_url, @thumb_url, @file_url, @duration, @status, @order_index)
   `);
   const info = stmt.run({
     course_id: data.course_id,
+    folder_id: data.folder_id ?? null,
     title: data.title,
     video_url: data.video_url ?? '',
     thumb_url: data.thumb_url ?? '',
@@ -95,8 +108,8 @@ router.post('/batch', (req, res) => {
     .get(cid).m;
 
   const insert = db.prepare(`
-    INSERT INTO lessons (course_id, title, video_url, thumb_url, file_url, duration, status, order_index)
-    VALUES (@course_id, @title, @video_url, @thumb_url, @file_url, @duration, 'published', @order_index)
+    INSERT INTO lessons (course_id, folder_id, title, video_url, thumb_url, file_url, duration, status, order_index)
+    VALUES (@course_id, @folder_id, @title, @video_url, @thumb_url, @file_url, @duration, 'published', @order_index)
   `);
 
   const created = [];
@@ -107,6 +120,7 @@ router.post('/batch', (req, res) => {
       }
       const info = insert.run({
         course_id: cid,
+        folder_id: item.folder_id || null,
         title: item.title.trim(),
         video_url: item.video_url || '',
         thumb_url: item.thumb_url || '',

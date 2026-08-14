@@ -79,6 +79,7 @@ All `/api/admin/*` routes require `Authorization: Bearer <token>` from
 | POST | `/api/admin/auth/login` | Get a JWT |
 | GET/POST/PUT/DELETE | `/api/admin/courses` | Course CRUD |
 | PUT | `/api/admin/courses/reorder/batch` | Drag-and-drop reorder |
+| GET/POST/PUT/DELETE | `/api/admin/folders` | Folder CRUD for Course → Folder → Video organization |
 | GET/POST/PUT/DELETE | `/api/admin/lessons` | Lesson CRUD |
 | POST | `/api/admin/lessons/batch` | Bulk-add lessons to a course |
 | GET/PUT | `/api/admin/users` | List/update users |
@@ -95,6 +96,8 @@ All `/api/admin/*` routes require `Authorization: Bearer <token>` from
 | GET | `/api/public/premium/check/:deviceId` | Premium status |
 | POST | `/api/public/users/register` | Register/touch a device |
 | POST | `/api/public/users/progress` | Sync watch progress |
+
+The admin panel supports a backward-compatible nested content model. A course may contain folders, and each folder may contain videos represented by the existing lesson records. Videos without a folder remain supported as unsorted course videos. The public course response continues to include the legacy flat `lessons` array and now also includes `folders`, where each folder contains its published videos.
 
 ## 6. Android (AndLua) integration
 

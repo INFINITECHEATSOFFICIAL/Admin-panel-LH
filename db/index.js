@@ -38,6 +38,17 @@ CREATE TABLE IF NOT EXISTS courses (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS folders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  order_index INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS lessons (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
@@ -110,10 +121,18 @@ CREATE TABLE IF NOT EXISTS config (
 );
 
 CREATE INDEX IF NOT EXISTS idx_lessons_course ON lessons(course_id);
+CREATE INDEX IF NOT EXISTS idx_folders_course ON folders(course_id);
 CREATE INDEX IF NOT EXISTS idx_users_device ON users(device_id);
 CREATE INDEX IF NOT EXISTS idx_premium_device ON premium_users(device_id);
 CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON admin_logs(timestamp);
 `);
+
+// Backward-compatible migration for databases created before folders existed.
+const lessonColumns = db.pragma('table_info(lessons)');
+if (!lessonColumns.some((column) => column.name === 'folder_id')) {
+  db.exec('ALTER TABLE lessons ADD COLUMN folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_lessons_folder ON lessons(folder_id)');
 
 // Seed the singleton config row.
 db.prepare(`INSERT OR IGNORE INTO config (id) VALUES (1)`).run();

@@ -106,9 +106,13 @@ document.addEventListener('click', (event) => {
     case 'edit-course': editCourse(id); break;
     case 'delete-course': deleteCourse(id); break;
     case 'manage-lessons': manageLessons(courseId, button.dataset.courseTitle || ''); break;
-    case 'lesson-modal': lessonModal(courseId); break;
-    case 'save-lesson': saveLesson(courseId); break;
+    case 'lesson-modal': lessonModal(courseId, button.dataset.folderId ? Number(button.dataset.folderId) : null); break;
+    case 'save-lesson': saveLesson(courseId, button.dataset.folderId ? Number(button.dataset.folderId) : null); break;
     case 'delete-lesson': deleteLesson(id, courseId); break;
+    case 'folder-modal': folderModal(courseId); break;
+    case 'save-folder': saveFolder(courseId); break;
+    case 'open-folder': manageFolderVideos(id, courseId, button.dataset.folderTitle || ''); break;
+    case 'delete-folder': deleteFolder(id, courseId); break;
     case 'block-user': blockUser(id); break;
     case 'unblock-user': unblockUser(id); break;
     case 'load-users-page': loadUsers(Number(button.dataset.page)); break;
@@ -281,12 +285,86 @@ async function deleteCourse(id) {
 // ── Lessons ───────────────────────────────────────────────────────────────
 async function manageLessons(courseId, courseTitle) {
   try {
-    const { data } = await api(`/lessons/course/${courseId}`);
+    const [{ data: lessons }, { data: folders }] = await Promise.all([
+      api(`/lessons/course/${courseId}`),
+      api(`/folders/course/${courseId}`),
+    ]);
+    const folderMarkup = folders.length
+      ? folders.map((folder) => folderRow(folder, courseId)).join('')
+      : '<p class="muted">No folders yet. Add one to organize videos.</p>';
+    const looseVideos = lessons.filter((lesson) => !lesson.folder_id);
     openModal(`
-      <h3>Lessons · ${esc(courseTitle)}</h3>
-      <div id="lessonListInner">${data.map((l) => lessonRow(l)).join('') || '<p class="muted">No lessons yet.</p>'}</div>
-      <button class="btn btn-primary btn-block" style="margin-top:14px" data-action="lesson-modal" data-course-id="${courseId}">➕ Add Lesson</button>
+      <h3>Content · ${esc(courseTitle)}</h3>
+      <div class="content-toolbar">
+        <button type="button" class="btn btn-primary" data-action="folder-modal" data-course-id="${courseId}">📁 Add Folder</button>
+        <button type="button" class="btn btn-ghost" data-action="lesson-modal" data-course-id="${courseId}">🎬 Add Video</button>
+      </div>
+      <div class="form-section"><div class="form-section-title">Folders</div><div id="folderListInner">${folderMarkup}</div></div>
+      <div class="form-section"><div class="form-section-title">Unsorted videos</div><div id="lessonListInner">${looseVideos.map((l) => lessonRow(l)).join('') || '<p class="muted">No unsorted videos.</p>'}</div></div>
       <div class="modal-actions"><button class="btn btn-ghost" data-action="close-modal">Close</button></div>
+    `);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function folderRow(folder, courseId) {
+  return `<div class="list-item folder-row">
+    <div class="list-item-icon">📁</div>
+    <div class="list-item-body">
+      <div class="list-item-title">${esc(folder.title)}</div>
+      <div class="list-item-sub">${esc(folder.description || 'Folder')} · ${folder.video_count || 0} video(s)</div>
+    </div>
+    <div class="list-item-actions">
+      <button type="button" class="btn btn-ghost btn-sm" data-action="open-folder" data-id="${folder.id}" data-course-id="${courseId}" data-folder-title="${esc(folder.title)}">Open</button>
+      <button type="button" class="btn btn-danger btn-sm" data-action="delete-folder" data-id="${folder.id}" data-course-id="${courseId}">🗑</button>
+    </div>
+  </div>`;
+}
+
+function folderModal(courseId) {
+  openModal(`
+    <h3>Add Folder</h3>
+    <label>Folder name<input id="ff_title" placeholder="Module 01"></label>
+    <label>Description<textarea id="ff_desc" rows="3" placeholder="What belongs in this folder?"></textarea></label>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-action="manage-lessons" data-course-id="${courseId}">Back</button>
+      <button type="button" class="btn btn-primary" data-action="save-folder" data-course-id="${courseId}">Save Folder</button>
+    </div>
+  `);
+}
+
+async function saveFolder(courseId) {
+  const payload = {
+    course_id: courseId,
+    title: document.getElementById('ff_title').value.trim(),
+    description: document.getElementById('ff_desc').value.trim(),
+  };
+  if (!payload.title) return toast('Folder name is required', 'error');
+  try {
+    await api('/folders', { method: 'POST', body: JSON.stringify(payload) });
+    toast('Folder created');
+    manageLessons(courseId, '');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function deleteFolder(id, courseId) {
+  if (!confirm('Delete this folder? Videos will remain in the course as unsorted videos.')) return;
+  try {
+    await api(`/folders/${id}`, { method: 'DELETE' });
+    toast('Folder deleted');
+    manageLessons(courseId, '');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function manageFolderVideos(folderId, courseId, folderTitle) {
+  try {
+    const { data } = await api(`/folders/${folderId}`);
+    openModal(`
+      <h3>Videos · ${esc(folderTitle)}</h3>
+      <div id="folderVideoList">${data.lessons?.map((lesson) => lessonRow(lesson)).join('') || '<p class="muted">No videos in this folder yet.</p>'}</div>
+      <button type="button" class="btn btn-primary btn-block" style="margin-top:14px" data-action="lesson-modal" data-course-id="${courseId}" data-folder-id="${folderId}">🎬 Add Video to Folder</button>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-action="manage-lessons" data-course-id="${courseId}">Back to Content</button>
+      </div>
     `);
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -304,9 +382,9 @@ function lessonRow(l) {
     </div>`;
 }
 
-function lessonModal(courseId) {
+function lessonModal(courseId, folderId = null) {
   openModal(`
-    <h3>Add Lesson</h3>
+    <h3>${folderId ? 'Add Video to Folder' : 'Add Video'}</h3>
     <label>Title<input id="lf_title"></label>
     <label>Video URL<input id="lf_video"></label>
     <label>Thumbnail URL<input id="lf_thumb"></label>
@@ -314,12 +392,12 @@ function lessonModal(courseId) {
     <label>Duration (e.g. 12:30)<input id="lf_duration"></label>
     <div class="modal-actions">
       <button class="btn btn-ghost" data-action="manage-lessons" data-course-id="${courseId}">Back</button>
-      <button class="btn btn-primary" data-action="save-lesson" data-course-id="${courseId}">Save</button>
+      <button class="btn btn-primary" data-action="save-lesson" data-course-id="${courseId}" data-folder-id="${folderId || ''}">Save Video</button>
     </div>
   `);
 }
 
-async function saveLesson(courseId) {
+async function saveLesson(courseId, folderId = null) {
   const payload = {
     course_id: courseId,
     title: document.getElementById('lf_title').value.trim(),
@@ -328,9 +406,10 @@ async function saveLesson(courseId) {
     file_url: document.getElementById('lf_file').value.trim(),
     duration: document.getElementById('lf_duration').value.trim(),
   };
+  if (folderId) payload.folder_id = folderId;
   try {
     await api('/lessons', { method: 'POST', body: JSON.stringify(payload) });
-    toast('Lesson added');
+    toast(folderId ? 'Video added to folder' : 'Video added');
     manageLessons(courseId, '');
   } catch (err) { toast(err.message, 'error'); }
 }

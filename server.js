@@ -24,6 +24,7 @@ const { requireAdminAuth, requireApiKey } = require('./middleware/auth');
 
 const authRoutes = require('./routes/auth');
 const courseRoutes = require('./routes/courses');
+const folderRoutes = require('./routes/folders');
 const lessonRoutes = require('./routes/lessons');
 const userRoutes = require('./routes/users');
 const premiumRoutes = require('./routes/premium');
@@ -118,6 +119,7 @@ app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
 // ── API routes ──────────────────────────────────────────────────────────────
 app.use('/api/admin/auth', authRoutes);
 app.use('/api/admin/courses', requireAdminAuth, courseRoutes);
+app.use('/api/admin/folders', requireAdminAuth, folderRoutes);
 app.use('/api/admin/lessons', requireAdminAuth, lessonRoutes);
 app.use('/api/admin/users', requireAdminAuth, userRoutes);
 app.use('/api/admin/premium', requireAdminAuth, premiumRoutes);
