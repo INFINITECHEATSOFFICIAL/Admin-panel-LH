@@ -5,7 +5,13 @@ const fs = require('fs');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 
-const DB_PATH = process.env.DB_PATH || './data/learning_hub.db';
+// Railway deployments have an ephemeral filesystem. When a Railway Volume is
+// attached, its mount path is provided at runtime and must hold the SQLite file
+// so courses, users, notices, and settings survive every redeploy. DB_PATH
+// remains an explicit override for local development or a custom mount path.
+const volumeMountPath = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+const DB_PATH = process.env.DB_PATH
+  || (volumeMountPath ? path.join(volumeMountPath, 'learning_hub.db') : './data/learning_hub.db');
 const dir = path.dirname(DB_PATH);
 if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -72,6 +78,7 @@ CREATE TABLE IF NOT EXISTS users (
   last_active TEXT NOT NULL DEFAULT (datetime('now')),
   is_premium INTEGER NOT NULL DEFAULT 0,
   is_blocked INTEGER NOT NULL DEFAULT 0,
+  firebase_installation_id TEXT,
   enrolled_courses TEXT NOT NULL DEFAULT '[]',
   progress TEXT NOT NULL DEFAULT '{}'
 );
@@ -133,6 +140,13 @@ if (!lessonColumns.some((column) => column.name === 'folder_id')) {
   db.exec('ALTER TABLE lessons ADD COLUMN folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL');
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_lessons_folder ON lessons(folder_id)');
+
+// Backward-compatible migration for Firebase Cloud Messaging installation IDs.
+const userColumns = db.pragma('table_info(users)');
+if (!userColumns.some((column) => column.name === 'firebase_installation_id')) {
+  db.exec('ALTER TABLE users ADD COLUMN firebase_installation_id TEXT');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_users_firebase_installation ON users(firebase_installation_id)');
 
 // Seed the singleton config row.
 db.prepare(`INSERT OR IGNORE INTO config (id) VALUES (1)`).run();
