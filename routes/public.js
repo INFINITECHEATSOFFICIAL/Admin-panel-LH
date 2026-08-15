@@ -34,6 +34,35 @@ router.get('/config', (req, res) => {
   });
 });
 
+// GET /api/public/notices?device_id=... — active notices filtered for the
+// calling device's current entitlement. This does not expose admin-only data.
+router.get('/notices', (req, res) => {
+  const deviceId = typeof req.query.device_id === 'string' ? req.query.device_id.slice(0, 256) : '';
+  const today = new Date().toISOString().slice(0, 10);
+  const user = deviceId ? db.prepare('SELECT is_premium FROM users WHERE device_id = ?').get(deviceId) : null;
+  const premiumGrant = deviceId
+    ? db.prepare(
+      `SELECT 1 FROM premium_users
+       WHERE device_id = ? AND (expiry_date IS NULL OR expiry_date = '' OR expiry_date >= ?)
+       LIMIT 1`
+    ).get(deviceId, today)
+    : null;
+  const audience = user?.is_premium || premiumGrant ? 'premium' : 'free';
+
+  if (user && deviceId) touchLastActive(deviceId);
+
+  const rows = db.prepare(
+    `SELECT id, title, message, target, created_at, expires_at
+     FROM notices
+     WHERE is_active = 1
+       AND (expires_at IS NULL OR expires_at = '' OR expires_at > datetime('now'))
+       AND (target = 'all' OR target = ?)
+     ORDER BY datetime(created_at) DESC, id DESC`
+  ).all(audience);
+
+  res.json({ data: rows, audience });
+});
+
 // GET /api/public/courses — active courses with their published lessons.
 router.get('/courses', (req, res) => {
   const courses = db.prepare('SELECT * FROM courses WHERE active = 1 ORDER BY order_index ASC').all();
